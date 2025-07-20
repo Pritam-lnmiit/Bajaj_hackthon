@@ -1,0 +1,8 @@
+[
+    {"text": "This product is amazing and works perfectly!", "label": 2},
+    {"text": "Terrible experience, the item broke after one use.", "label": 0},
+    {"text": "It's okay, nothing special but gets the job done.", "label": 1},
+    {"text": "I love the design and functionality of this gadget!", "label": 2},
+    {"text": "Customer service was unhelpful and rude.", "label": 0},
+    {"text": "Decent product, but could be improved.", "label": 1}
+]

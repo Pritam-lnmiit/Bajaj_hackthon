@@ -1,0 +1,5 @@
+[
+    {"text": "Really happy with my purchase, highly recommend!", "label": 2},
+    {"text": "Not worth the price, very disappointed.", "label": 0},
+    {"text": "Average quality, does what it’s supposed to.", "label": 1}
+]
