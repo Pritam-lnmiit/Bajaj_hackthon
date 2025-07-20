@@ -170,7 +170,7 @@ python-docx
 python-dotenv
 pytz
 pyvis
-pywin32
+
 PyYAML
 pyyaml_env_tag
 referencing
