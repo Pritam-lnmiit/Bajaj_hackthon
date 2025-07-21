@@ -224,7 +224,7 @@ xxhash
 yarl
 zipp
 zstandard
-pinecone-client
+pinecone
 grpcio
 certifi
 urllib3
