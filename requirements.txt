@@ -224,3 +224,7 @@ xxhash
 yarl
 zipp
 zstandard
+pinecone-client
+grpcio
+certifi
+urllib3
