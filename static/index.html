@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Voice Assistant</title>
+</head>
+<body>
+  <h2>🎙️ Ask Your Insurance Question</h2>
+  <button onclick="startListening()">Start Talking</button>
+  <p id="spokenText">You said: ...</p>
+  <p id="response">Assistant: ...</p>
+
+  <script>
+    function startListening() {
+      const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+      recognition.lang = 'en-US';
+      recognition.onresult = async function(event) {
+        const spokenText = event.results[0][0].transcript;
+        document.getElementById('spokenText').innerText = "You said: " + spokenText;
+
+        const res = await fetch("/voice-query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: spokenText })
+        });
+
+        const data = await res.json();
+        document.getElementById('response').innerText = "Assistant: " + data.response;
+
+        const speak = new SpeechSynthesisUtterance(data.response);
+        window.speechSynthesis.speak(speak);
+      };
+      recognition.start();
+    }
+  </script>
+</body>
+</html>

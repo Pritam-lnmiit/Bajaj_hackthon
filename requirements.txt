@@ -228,3 +228,6 @@ pinecone
 grpcio
 certifi
 urllib3
+langdetect deep-translator
+gtts 
+transformers accelerate

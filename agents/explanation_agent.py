@@ -1,59 +1,62 @@
 import os
 import openai
 import json
+import logging
 from dotenv import load_dotenv
 
-load_dotenv()
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
+load_dotenv()
 client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def explain_decision(parsed_query: dict, decision: dict) -> str:
-    """
-    Generates a simple human-readable explanation based on the claim and decision.
-    """
+    if not parsed_query or not decision:
+        logger.error(f"Invalid input - parsed_query: {parsed_query}, decision: {decision}")
+        return "We couldn't process your claim due to missing information. Please contact support."
+
+    age = parsed_query.get('age', 'N/A')
+    gender = parsed_query.get('gender', 'N/A')
+    procedure = parsed_query.get('procedure', 'N/A')
+    location = parsed_query.get('location', 'N/A')
+    policy_duration = parsed_query.get('policy_duration_months', 'N/A')
+    claim_decision = decision.get('decision', 'rejected')
+    amount = decision.get('amount', 0)
+    justification = decision.get('justification', 'No justification provided') if isinstance(decision.get('justification'), str) else 'No justification provided'
+
     user_query = f"""
     A user filed a health insurance claim with these details:
 
-    Age: {parsed_query.get('age')}
-    Gender: {parsed_query.get('gender')}
-    Procedure: {parsed_query.get('procedure')}
-    Location: {parsed_query.get('location')}
-    Policy Duration: {parsed_query.get('policy_duration_months')} months
+    Age: {age}
+    Gender: {gender}
+    Procedure: {procedure}
+    Location: {location}
+    Policy Duration: {policy_duration} months
 
-    The claim decision was: {decision.get('decision')}
+    The claim decision was: {claim_decision}
+    Approved Amount: ₹{amount}
 
     Justification from the evaluator:
-    {decision.get('justification')}
+    {justification}
 
     Please summarize this claim decision in 3-4 lines using simple, clear language suitable for the customer.
+    Include the approved amount in the summary if the claim is approved or partially approved.
+    Ensure the explanation is grammatically correct and clear.
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {"role": "system", "content": "You are a helpful customer support assistant that explains health insurance decisions in simple terms."},
-            {"role": "user", "content": user_query}
-        ],
-        temperature=0.3
-    )
-
-    return response.choices[0].message.content.strip()
-
-# For quick testing
-if __name__ == "__main__":
-    parsed = {
-        "age": 46,
-        "gender": "male",
-        "procedure": "knee surgery",
-        "location": "Pune",
-        "policy_duration_months": 3
-    }
-
-    decision = {
-        "decision": "rejected",
-        "justification": "The policyholder has only been covered for 3 months, which is typically less than the waiting period required for surgeries like knee surgery."
-    }
-
-    summary = explain_decision(parsed, decision)
-    print("\n📢 Customer Explanation:\n")
-    print(summary)
+    try:
+        logger.debug(f"Generating explanation for procedure: {procedure}, decision: {claim_decision}, amount: {amount}")
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are a helpful customer support assistant that explains health insurance decisions in simple terms."},
+                {"role": "user", "content": user_query}
+            ],
+            temperature=0.3
+        )
+        explanation = response.choices[0].message.content.strip()
+        logger.debug(f"Generated explanation: {explanation}")
+        return explanation
+    except Exception as e:
+        logger.error(f"Error generating explanation: {str(e)}")
+        return f"We couldn't process your claim explanation due to an error: {str(e)}. Please contact support."
