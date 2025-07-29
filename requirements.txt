@@ -234,3 +234,4 @@ deep-translator>=1.11.4
 gtts 
 transformers 
 accelerate
+fitz

@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from graph.pipeline import run_pipeline
+from graph.faq_pipeline import run_faq_pipeline  # ✅ Corrected import
 from pinecone import Pinecone
 import logging
 import time
@@ -67,26 +68,19 @@ def generate_embedding(text: str) -> list:
 
 def extract_structured_info(text: str) -> str:
     text = text.lower().strip()
-
-    # Remove greetings or intro
     text = re.sub(r"(hello|hi)[^,\.]*[,\.]", "", text)
     text = re.sub(r"my name is [a-z ]+", "", text)
-
-    # Fix common ASR errors
     text = text.replace("ki surgery", "knee surgery")
     text = text.replace("key surgery", "knee surgery")
     text = re.sub(r"male", "M", text)
     text = re.sub(r"female", "F", text)
     text = re.sub(r"i am (\d+)", r"\1", text)
     text = re.sub(r"(\d+)\s*(year)?s?\s*old", r"\1", text)
-
-    # Clean known patterns
     text = text.replace("months policy", "month policy")
     text = text.replace("policy of", "")
     text = text.replace("three", "3")
     text = text.replace("six", "6")
     text = text.replace("twelve", "12")
-
     return text.strip()
 
 @app.post("/api/claim")
@@ -122,64 +116,14 @@ def analyze_claim(data: QueryRequest, think_mode: bool = False):
         logger.error(f"Error processing claim: {str(e)} - Query: {data.query}")
         raise HTTPException(status_code=500, detail={"status": "error", "message": str(e)})
 
-@app.get("/api/stats")
-def get_statistics():
+@app.post("/api/faq")
+def handle_faq(data: QueryRequest):
     try:
-        logger.info("Generating statistics from Pinecone index")
-        index = get_pinecone_index()
-        query_response = index.query(vector=[0]*1536, top_k=10000, include_metadata=True)
-        ids = [match["id"] for match in query_response["matches"]]
-        fetch_response = index.fetch(ids=ids)
-        vectors = fetch_response.vectors
-
-        rejections = 0
-        total_claims = len(vectors)
-        policy_durations = []
-        procedures = {}
-        justifications = {}
-        approved_amounts = []
-
-        for vector_id, vector_data in vectors.items():
-            metadata = vector_data["metadata"]
-            if metadata.get("decision") == "rejected":
-                rejections += 1
-            amount = metadata.get("amount", 0)
-            if isinstance(amount, (int, float)) and amount > 0:
-                approved_amounts.append(amount)
-            try:
-                parsed_query = json.loads(metadata.get("parsed_query", "{}"))
-                if isinstance(parsed_query, dict):
-                    policy_duration = parsed_query.get("policy_duration_months")
-                    policy_durations.append(policy_duration if policy_duration is not None else 0)
-                    procedure = parsed_query.get("procedure", "Unknown")
-                    procedures[procedure] = procedures.get(procedure, 0) + 1
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse parsed_query: {metadata.get('parsed_query')}")
-            try:
-                just_list = json.loads(metadata.get("justifications", "[]"))
-                if isinstance(just_list, list) and just_list:
-                    key = just_list[0].get("clause_text", "No justification") if isinstance(just_list[0], dict) else str(just_list[0])
-                    justifications[key] = justifications.get(key, 0) + 1
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse justifications: {metadata.get('justifications')}")
-                justifications["No justification"] = justifications.get("No justification", 0) + 1
-
-        rejection_rate = (rejections / total_claims * 100) if total_claims > 0 else 0
-        avg_policy_duration = sum(policy_durations) / len(policy_durations) if policy_durations else 0
-        avg_approved_amount = sum(approved_amounts) / len(approved_amounts) if approved_amounts else 0
-        top_procedures = dict(sorted(procedures.items(), key=lambda x: x[1], reverse=True)[:5])
-        top_justifications = dict(sorted(justifications.items(), key=lambda x: x[1], reverse=True)[:5])
-
-        stats = {
-            "rejection_rate": f"{rejection_rate:.1f}%",
-            "avg_policy_duration": f"{avg_policy_duration:.1f} months",
-            "avg_approved_amount": f"₹{avg_approved_amount:.2f}",
-            "top_procedures": top_procedures,
-            "top_justifications": top_justifications
-        }
-        return {"status": "success", "data": stats}
+        logger.info(f"Processing FAQ for query: {data.query}")
+        result = run_faq_pipeline(data.query)
+        return {"status": "success", "data": result}
     except Exception as e:
-        logger.error(f"Error generating statistics: {str(e)}")
+        logger.error(f"FAQ pipeline error: {str(e)}")
         raise HTTPException(status_code=500, detail={"status": "error", "message": str(e)})
 
 @app.post("/voice-query")
@@ -188,10 +132,16 @@ async def voice_query(data: VoiceQueryRequest):
         logger.info(f"Voice query received: {data.text}")
         cleaned_query = extract_structured_info(data.text)
         logger.info(f"Cleaned voice input: {cleaned_query}")
+
+        # Try claim pipeline first
         result = run_pipeline(cleaned_query, think_mode=False)
-        if not result:
-            raise ValueError("No result returned from pipeline")
-        response_text = result.get("explanation") or "I'm sorry, I couldn't process your query."
+
+        if result and result.get("decision") != "rejected":
+            response_text = result.get("explanation") or "Your insurance claim is valid."
+        else:
+            faq_result = run_faq_pipeline(cleaned_query)
+            response_text = faq_result.get("answers", ["Sorry, no answer found."])[0]
+
         return {"response": response_text}
     except Exception as e:
         logger.error(f"Voice query error: {str(e)}")

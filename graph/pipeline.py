@@ -1,3 +1,4 @@
+
 import sys
 import os
 import json
@@ -296,7 +297,7 @@ def run_pipeline(query: str, think_mode: bool = False) -> Dict:
         }
 
 if __name__ == "__main__":
-    query = "I used an air ambulance to shift my father from a hospital in Mumbai to another hospital in Pune for better facilities. Why was my claim rejected?"
+    query = "What is the waiting period for pre-existing diseases (PED) to be covered?"
     result = run_pipeline(query)
     print("\n✅ FINAL OUTPUT:\n")
     print(json.dumps(result, indent=2, ensure_ascii=False))
