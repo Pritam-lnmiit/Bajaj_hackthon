@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Body
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,12 +21,18 @@ except ImportError:
             return func
         return decorator
 
+# ---------------------- Data Models ----------------------
 class QueryRequest(BaseModel):
     query: str
 
 class VoiceQueryRequest(BaseModel):
     text: str
 
+class HackRxRequest(BaseModel):
+    documents: str
+    questions: List[str]
+
+# ---------------------- App Initialization ----------------------
 app = FastAPI(
     title="Insurance Claim Analyzer (RAG)",
     description="API to analyze medical insurance claims using a multi-agent RAG pipeline and provide voice-based support.",
@@ -45,6 +51,7 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# ---------------------- Pinecone & Embeddings ----------------------
 def get_pinecone_index():
     try:
         api_key = os.getenv("PINECONE_API_KEY")
@@ -83,6 +90,7 @@ def extract_structured_info(text: str) -> str:
     text = text.replace("twelve", "12")
     return text.strip()
 
+# ---------------------- API Endpoints ----------------------
 @app.post("/api/claim")
 @retry(tries=3, delay=1, backoff=2, logger=logger)
 def analyze_claim(data: QueryRequest, think_mode: bool = False):
@@ -150,3 +158,30 @@ async def voice_query(data: VoiceQueryRequest):
 @app.get("/")
 def home():
     return {"message": "RAG-Based Insurance Claim API is live 🚀", "version": "1.1.0"}
+
+# ---------------------- NEW HackRx Endpoint ----------------------
+@app.post("/hackrx/run")
+async def hackrx_run(request: HackRxRequest):
+    """
+    HackRx testing endpoint.
+    Takes a PDF URL (documents) and a list of questions.
+    Returns answers in the required format.
+    """
+    try:
+        logger.info(f"HackRx request received: {len(request.questions)} questions")
+
+        answers = []
+        for question in request.questions:
+            logger.info(f"Processing HackRx question: {question}")
+            result = run_faq_pipeline(question)  # ✅ Uses FAQ pipeline for now
+
+            if isinstance(result, dict) and "answers" in result:
+                answers.append(result["answers"][0])
+            else:
+                answers.append("Sorry, no answer found.")
+
+        return {"answers": answers}
+
+    except Exception as e:
+        logger.error(f"Error in /hackrx/run: {str(e)}")
+        raise HTTPException(status_code=500, detail={"status": "error", "message": str(e)})
