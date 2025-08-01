@@ -38,14 +38,14 @@ def retrieve_node(state: QAState) -> QAState:
     logger.info(f"🔍 Retrieving chunks for: {query}")
 
     try:
-        chunks = retrieve_chunks(query, k=12)  # 🔼 Increased from 8 to 12
+        chunks = retrieve_chunks(query, k=12)
         logger.info(f"✅ Retrieved {len(chunks)} chunks for query: {query}")
         return {"retrieved_chunks": chunks or []}
     except Exception as e:
         logger.error(f"❌ Retrieval error: {e}")
         return {"retrieved_chunks": []}
 
-# ✅ STEP 2: Generate answer using GPT (with improved prompt & fallback)
+# ✅ STEP 2: Generate answer using GPT (with improved filtering and fallback)
 def answer_node(state: QAState) -> QAState:
     query = state["raw_query"]
     chunks = state.get("retrieved_chunks", [])
@@ -54,10 +54,15 @@ def answer_node(state: QAState) -> QAState:
         logger.warning(f"⚠ No chunks found for: {query}")
         return {"final_answer": "Sorry, I couldn’t find this in the policy database. Please contact Bajaj Allianz for details."}
 
-    # ✅ Combine chunks into one context for GPT
-    context_text = "\n\n".join([c["text"] for c in chunks])
+    # ✅ Filter and rank high-scoring chunks
+    high_quality_chunks = [c for c in chunks if c.get("score", 0) >= 0.85]
+    high_quality_chunks = sorted(high_quality_chunks, key=lambda x: x["score"], reverse=True)
+    top_chunks = high_quality_chunks[:6] if high_quality_chunks else chunks[:3]
 
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)  # 🔼 Lower temp for accuracy
+    # ✅ Combine chunks into one context
+    context_text = "\n\n".join([c["text"] for c in top_chunks])
+
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
     prompt = f"""
     You are an expert Bajaj Allianz Health Insurance assistant.
 
@@ -66,20 +71,20 @@ def answer_node(state: QAState) -> QAState:
     Context from the policy:
     {context_text}
 
-    👉 Write a clear, concise, and accurate answer using the provided context.
-    👉 If the context has partial information, summarize what is available and note any missing details.
-    👉 Only say “This information is not available in the policy database.” if there is absolutely no relevant content.
+    🔀 Write a clear, concise, and accurate answer using only the above policy context.
+    🔀 If context partially answers the question, summarize what is available.
+    🔀 If there is no relevant content, respond with:
+    \"This information is not available in the policy database.\"
     """
 
     try:
         response = llm.invoke(prompt)
         answer = response.content.strip()
 
-        # ✅ Retriever fallback if GPT says "not available"
         if "not available" in answer.lower():
-            top_chunk = chunks[0]["text"]
-            logger.info("⚠ GPT fallback triggered — returning top retriever chunk")
-            answer = f"From the policy: {top_chunk}"
+            fallback_text = top_chunks[0]["text"]
+            logger.info("⚠ GPT fallback triggered — returning top chunk from retriever")
+            answer = f"From the policy: {fallback_text.strip().splitlines()[0]}..."
 
         logger.info(f"✅ Answer generated for query: {query}")
         return {"final_answer": answer}
@@ -87,7 +92,7 @@ def answer_node(state: QAState) -> QAState:
         logger.error(f"❌ GPT answer generation failed: {e}")
         return {"final_answer": "Failed to generate an answer at this time."}
 
-# ✅ STEP 3: Add metadata (timestamp)
+# ✅ STEP 3: Add timestamp
 def finalize_node(state: QAState) -> QAState:
     state["timestamp"] = datetime.now().isoformat()
     return state
@@ -140,4 +145,4 @@ if __name__ == "__main__":
     print(f"✅ Answer: {result['answers'][0]}\n")
     print("📦 Chunks Used:")
     for idx, c in enumerate(result["chunks_used"], 1):
-        print(f"{idx}. (Score: {c['score']:.2f}) {c['text'][:150]}...")
+        print(f"{idx}. (Score: {c.get('score', 0):.2f}) {c['text'][:150]}...")
